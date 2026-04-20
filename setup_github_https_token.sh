@@ -10,7 +10,7 @@ repo="langchain_learning"
 usage() {
   cat <<'EOF'
 Usage:
-  setup_github_https_token.sh [--store]
+  setup_github_https_token.sh [--store] [--no-rebase]
 
 What it does:
   - Prompts for a GitHub PAT (input hidden)
@@ -19,22 +19,23 @@ What it does:
 Modes:
   (default) No persistent storage: uses a temporary GIT_ASKPASS helper for one push.
   --store   Persist credentials to ./.git-credentials (plaintext) for future pushes.
+  --no-rebase  Skip fetching/rebasing before push.
 EOF
 }
 
 store=false
-if [[ $# -gt 1 ]]; then
+do_rebase=true
+if [[ $# -gt 2 ]]; then
   usage
   exit 2
 fi
-if [[ $# -eq 1 ]]; then
-  if [[ "$1" == "--store" ]]; then
-    store=true
-  else
-    usage
-    exit 2
-  fi
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --store) store=true ;;
+    --no-rebase) do_rebase=false ;;
+    *) usage; exit 2 ;;
+  esac
+done
 
 ./gitw remote get-url origin >/dev/null 2>&1 || ./gitw remote add origin "https://github.com/${user}/${repo}.git"
 
@@ -71,6 +72,14 @@ EOF
 chmod 700 "$askpass"
 
 echo "Pushing without storing credentials..."
+if $do_rebase; then
+  echo "Fetching remote and rebasing (to avoid non-fast-forward push)..."
+  GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 ./gitw fetch origin main || true
+  if ./gitw show-ref --verify --quiet refs/remotes/origin/main; then
+    GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 ./gitw rebase origin/main
+  fi
+fi
+
 GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 ./gitw push -u origin main
 
 echo "Done."
